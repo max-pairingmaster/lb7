@@ -1,0 +1,121 @@
+name: Release and Documentation
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Generate Release and Update Docs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history so commits/pulls can be queried
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fetch Joke, PR Title, and Version
+        id: prep
+        run: |
+          # 1. Fetch Chuck Norris Joke
+          echo "Fetching random joke from Chuck Norris API..."
+          JOKE_TEXT=$(curl -s https://api.chucknorris.io/jokes/random | jq -r '.value')
+          if [ -z "$JOKE_TEXT" ] || [ "$JOKE_TEXT" = "null" ]; then
+            JOKE_TEXT="Chuck Norris built this project in 0.1 microseconds."
+          fi
+          
+          # 2. Fetch Pull Request Title or Commit Message
+          echo "Fetching associated Pull Request title..."
+          PR_TITLE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+            | jq -r '.[0].title // empty')
+          
+          if [ -z "$PR_TITLE" ] || [ "$PR_TITLE" = "null" ]; then
+            # Extract first line of the commit message as default
+            PR_TITLE="Direct commit: $(git log -1 --format=%s)"
+          fi
+
+          # 3. Generate Version Tag
+          VERSION="v1.0.${{ github.run_number }}"
+
+          # Export variables securely to GITHUB_OUTPUT using EOF delimiter
+          echo "joke<<EOF" >> $GITHUB_OUTPUT
+          echo "$JOKE_TEXT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "pr_title<<EOF" >> $GITHUB_OUTPUT
+          echo "$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update README.md
+        env:
+          RELEASE_VERSION: ${{ steps.prep.outputs.version }}
+          PR_TITLE: ${{ steps.prep.outputs.pr_title }}
+          JOKE: ${{ steps.prep.outputs.joke }}
+        run: |
+          node -e '
+          const fs = require("fs");
+          const version = process.env.RELEASE_VERSION;
+          const prTitle = process.env.PR_TITLE;
+          const joke = process.env.JOKE;
+          
+          let content = "";
+          if (fs.existsSync("README.md")) {
+            content = fs.readFileSync("README.md", "utf8");
+          }
+          
+          const marker = "## Latest Release Info";
+          const info = `${marker}\n\n- **Version:** \`${version}\`\n- **Pull Request / Commit:** ${prTitle}\n- **Chuck Norris Joke:** *${joke}*\n`;
+          
+          if (content.includes(marker)) {
+            content = content.split(marker)[0] + info;
+          } else {
+            content = content.trimEnd() + "\n\n" + info + "\n";
+          }
+          
+          fs.writeFileSync("README.md", content, "utf8");
+          console.log("README.md successfully updated with version:", version);
+          '
+
+      - name: Commit and Push README changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          
+          # Only commit and push if there are changes to avoid workflow errors
+          if ! git diff --quiet HEAD; then
+            git commit -m "docs: update README with release ${{ steps.prep.outputs.version }} [skip ci]"
+            git push origin main
+          else
+            echo "No changes in README.md, skipping commit."
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.prep.outputs.version }}
+          name: Release ${{ steps.prep.outputs.version }}
+          body: |
+            ## 🚀 Release Information
+            - **Version:** `${{ steps.prep.outputs.version }}`
+            - **Pull Request / Commit:** ${{ steps.prep.outputs.pr_title }}
+
+            ---
+
+            ### 💬 Secret Chuck Norris Fact of this Release
+            > ${{ steps.prep.outputs.joke }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
