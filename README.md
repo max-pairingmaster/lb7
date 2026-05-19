@@ -17,7 +17,6 @@ If you are developing a production application, we recommend using TypeScript wi
 
 ## Latest Release Info
 
-- **Version:** `v1.0.1`
-- **Pull Request / Commit:** Direct commit: feat: initialize Vite project with CI/CD GitHub Actions workflows
-- **Chuck Norris Joke:** *When Chuck Norris was told that a nuke was coming his way he said "everyone get behind me you'll be safe."*
-
+- **Version:** `v1.0.2`
+- **Pull Request / Commit:** Direct commit: chore: intentionally introduce errors to test CI failure triggers
+- **Chuck Norris Joke:** *Grandma got run over by a reindeer. Then Chuck Norris finished her off by running over her in his Hummer.*
